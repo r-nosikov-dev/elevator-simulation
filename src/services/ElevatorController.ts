@@ -2,17 +2,26 @@ import { TIMING } from '../config';
 import { Building } from '../domain/Building';
 import { Person } from '../domain/Person';
 import { Direction, ElevatorState, FloorNumber } from '../domain/types';
-
-type TravelDir = Direction.Up | Direction.Down;
-
-type Decision = { target: FloorNumber; direction: TravelDir };
+import {
+  ElevatorDecision,
+  ElevatorRoutingStrategy,
+  TravelDir,
+  createRoutingContext,
+  ScanRoutingStrategy,
+} from './routing';
 
 export class ElevatorController {
   private busy = false;
   private stopped = false;
   private loopHandle: number | null = null;
+  private strategy: ElevatorRoutingStrategy;
 
-  constructor(private readonly building: Building) {}
+  constructor(
+    private readonly building: Building,
+    strategy: ElevatorRoutingStrategy = new ScanRoutingStrategy(),
+  ) {
+    this.strategy = strategy;
+  }
 
   start(): void {
     this.stopped = false;
@@ -31,7 +40,7 @@ export class ElevatorController {
   private tick(): void {
     if (this.stopped || this.busy) return;
 
-    const decision = this.decide();
+    const decision = this.strategy.decide(createRoutingContext(this.building));
     if (!decision) {
       this.building.elevator.setDirection(Direction.Idle);
       this.building.elevator.setState(ElevatorState.Idle);
@@ -43,40 +52,7 @@ export class ElevatorController {
     void this.execute(decision);
   }
 
-  // nearest-call routing
-  private decide(): Decision | null {
-    const elevator = this.building.elevator;
-    const floor = elevator.currentFloor;
-
-    if (!elevator.isEmpty) {
-      const dests = elevator.passengers.map((p) => p.targetFloor);
-      let best = dests[0]!;
-      for (const d of dests) {
-        if (Math.abs(d - floor) < Math.abs(best - floor)) best = d;
-      }
-      if (best === floor) {
-        const dir: TravelDir =
-          elevator.direction === Direction.Down ? Direction.Down : Direction.Up;
-        return { target: floor, direction: dir };
-      }
-      const direction: TravelDir = best > floor ? Direction.Up : Direction.Down;
-      return { target: best, direction };
-    }
-
-    const nearest = this.building.nearestWaitingFloor(floor);
-    if (nearest === null) return null;
-    if (nearest === floor) {
-      const up = this.building.waitingForDirection(floor, Direction.Up);
-      const down = this.building.waitingForDirection(floor, Direction.Down);
-      if (up.length > 0) return { target: floor, direction: Direction.Up };
-      if (down.length > 0) return { target: floor, direction: Direction.Down };
-      return null;
-    }
-    const direction: TravelDir = nearest > floor ? Direction.Up : Direction.Down;
-    return { target: nearest, direction };
-  }
-
-  private async execute(decision: Decision): Promise<void> {
+  private async execute(decision: ElevatorDecision): Promise<void> {
     this.busy = true;
     const elevator = this.building.elevator;
     elevator.setDirection(decision.direction);
@@ -122,32 +98,77 @@ export class ElevatorController {
     const floor = elevator.currentFloor;
 
     const leaving = elevator.passengersToAlight();
-    for (const person of leaving) {
-      this.building.alightPerson(person.id);
+    const canBoardSame =
+      !elevator.isFull &&
+      this.building.waitingForDirection(floor, dir).length > 0;
+    const willBeEmpty = elevator.passengerCount === leaving.length;
+    const canBoardOpposite =
+      willBeEmpty &&
+      this.building.waitingForDirection(
+        floor,
+        dir === Direction.Up ? Direction.Down : Direction.Up,
+      ).length > 0;
+
+    if (leaving.length === 0 && !canBoardSame && !canBoardOpposite) {
+      elevator.setState(ElevatorState.Idle);
+      this.building.notifyElevatorUpdated();
+      return;
     }
 
-    const waiters = [...this.building.waitingForDirection(floor, dir)];
-    for (const person of waiters) {
-      if (elevator.isFull) break;
-      this.building.boardPerson(person);
-    }
+    const stopStarted = performance.now();
+    elevator.setState(ElevatorState.Stopped);
+    this.building.notifyElevatorStopped(floor, TIMING.doorStopMs);
 
-    if (elevator.isEmpty) {
-      const opposite: TravelDir =
-        dir === Direction.Up ? Direction.Down : Direction.Up;
-      for (const person of [...this.building.waitingForDirection(floor, opposite)]) {
-        if (elevator.isFull) break;
-        if (this.building.boardPerson(person)) {
-          elevator.setDirection(opposite);
-        }
+    for (let i = 0; i < leaving.length; i++) {
+      if (this.stopped) return;
+      this.building.alightPerson(leaving[i].id);
+      if (i < leaving.length - 1) {
+        await this.delay(TIMING.boardStaggerMs);
       }
     }
 
-    elevator.setState(ElevatorState.Stopped);
-    this.building.notifyElevatorStopped(floor, TIMING.doorStopMs);
-    await this.delay(TIMING.doorStopMs);
+    let boarded = 0;
+    const boardNext = async (
+      person: Person,
+      flipDir?: TravelDir,
+    ): Promise<boolean> => {
+      if (this.stopped || elevator.isFull) return false;
+      if (!this.building.boardPerson(person)) return false;
+      boarded += 1;
+      if (flipDir) elevator.setDirection(flipDir);
+      await this.delay(TIMING.boardStaggerMs);
+      return true;
+    };
 
-    if (elevator.isEmpty && this.building.nearestWaitingFloor(floor) === null) {
+    const waiters = [...this.building.waitingForDirection(floor, dir)];
+    for (const person of waiters) {
+      if (!(await boardNext(person))) break;
+    }
+
+    // No same-direction boarders left: flip direction to take the opposite queue.
+    if (elevator.isEmpty && boarded === 0) {
+      const opposite: TravelDir =
+        dir === Direction.Up ? Direction.Down : Direction.Up;
+      const oppositeWaiters = [
+        ...this.building.waitingForDirection(floor, opposite),
+      ];
+      for (const person of oppositeWaiters) {
+        if (!(await boardNext(person, opposite))) break;
+      }
+    }
+
+    // Do not depart before the last board/exit tween has time to finish.
+    const elapsed = performance.now() - stopStarted;
+    const animTail = boarded > 0 || leaving.length > 0 ? TIMING.boardMs : 0;
+    const remaining = Math.max(TIMING.doorStopMs - elapsed, animTail);
+    if (remaining > 0) {
+      await this.delay(remaining);
+    }
+
+    if (
+      elevator.isEmpty &&
+      this.building.nearestWaitingFloor(floor) === null
+    ) {
       elevator.setDirection(Direction.Idle);
       elevator.setState(ElevatorState.Idle);
     }
