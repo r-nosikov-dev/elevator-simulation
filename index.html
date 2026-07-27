@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5"
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>Elevator Simulation</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="toolbar">
+        <h1>Elevator Simulation</h1>
+        <div class="controls">
+          <label>
+            Floors
+            <input
+              id="floors-input"
+              type="number"
+              inputmode="numeric"
+              autocomplete="off"
+            />
+          </label>
+          <label>
+            Capacity
+            <input
+              id="capacity-input"
+              type="number"
+              inputmode="numeric"
+              autocomplete="off"
+            />
+          </label>
+          <button id="apply-btn" type="button">
+            <span class="btn-label-full">Apply &amp; Restart</span>
+            <span class="btn-label-short">Restart</span>
+          </button>
+        </div>
+        <div class="legend">
+          <span class="legend-item up"><span class="legend-text">↑ Up</span></span>
+          <span class="legend-item down"><span class="legend-text">↓ Down</span></span>
+          <span id="direction-label" class="direction idle">Direction: IDLE</span>
+        </div>
+      </header>
+      <main id="canvas-host" aria-label="Elevator simulation canvas"></main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

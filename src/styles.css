@@ -1,0 +1,390 @@
+:root {
+  color-scheme: light;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.4;
+  color: #1a1a1a;
+  background: #eef1f5;
+  --toolbar-pad-x: 20px;
+  --toolbar-pad-y: 12px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  /* dvh accounts for mobile browser chrome better than vh */
+  min-height: 100%;
+  min-height: 100dvh;
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding: calc(var(--toolbar-pad-y) + var(--safe-top)) var(--toolbar-pad-x)
+    var(--toolbar-pad-y);
+  background: #fff;
+  border-bottom: 1px solid #d8dee6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.toolbar h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 12px;
+}
+
+.controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5b6570;
+}
+
+.controls input {
+  width: 72px;
+  padding: 8px 10px;
+  border: 1px solid #c5ced8;
+  border-radius: 8px;
+  /* ≥16px avoids iOS Safari auto-zoom on focus */
+  font-size: 16px;
+  background: #fff;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.controls input:focus {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
+  border-color: #2563eb;
+}
+
+.controls button {
+  padding: 10px 16px;
+  min-height: 44px;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.controls button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.controls button:active:not(:disabled) {
+  background: #1e40af;
+}
+
+.controls button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.btn-label-full {
+  display: inline;
+}
+
+.btn-label-short {
+  display: none;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-left: auto;
+  font-size: 0.9rem;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 2px solid;
+  font-weight: 600;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.legend-item.up {
+  border-color: #3b82f6;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.legend-item.down {
+  border-color: #22c55e;
+  background: #dcfce7;
+  color: #14532d;
+}
+
+.direction {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  background: #f1f5f9;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.direction.up {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.direction.down {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.direction.idle {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+#canvas-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px;
+  padding-bottom: calc(12px + var(--safe-bottom));
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+#canvas-host canvas {
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  /* width/height set by fitCanvasToHost; keep as fallback */
+  max-width: 100%;
+  height: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.error {
+  color: #b91c1c;
+  background: #fef2f2;
+  padding: 16px 20px;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  margin: 12px;
+  max-width: 36rem;
+}
+
+/* —— Tablet —— */
+@media (max-width: 900px) {
+  .toolbar {
+    gap: 10px 14px;
+  }
+
+  .legend {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+/* —— Phone —— */
+@media (max-width: 640px) {
+  :root {
+    --toolbar-pad-x: 12px;
+    --toolbar-pad-y: 10px;
+  }
+
+  .toolbar {
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .toolbar h1 {
+    font-size: 1rem;
+    width: 100%;
+  }
+
+  .controls {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    align-items: end;
+    gap: 8px;
+  }
+
+  .controls label {
+    min-width: 0;
+  }
+
+  .controls input {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .controls button {
+    width: 100%;
+    grid-column: 1 / -1;
+    min-height: 48px;
+    font-size: 1rem;
+  }
+
+  .btn-label-full {
+    display: none;
+  }
+
+  .btn-label-short {
+    display: inline;
+  }
+
+  .legend {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .legend-item {
+    padding: 5px 8px;
+    font-size: 0.75rem;
+  }
+
+  .direction {
+    flex: 1 1 auto;
+    text-align: center;
+    font-size: 0.8rem;
+    padding: 6px 8px;
+  }
+
+  #canvas-host {
+    padding: 8px;
+    padding-bottom: calc(8px + var(--safe-bottom));
+    align-items: flex-start;
+  }
+
+  #canvas-host canvas {
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  }
+}
+
+/* —— Narrow phones —— */
+@media (max-width: 380px) {
+  .controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .legend-item .legend-text {
+    /* keep arrows only if very tight — text still ok on 380 */
+  }
+}
+
+/* —— Landscape phone: compact toolbar, max canvas height —— */
+@media (max-height: 480px) and (orientation: landscape) {
+  :root {
+    --toolbar-pad-y: 6px;
+  }
+
+  .toolbar {
+    gap: 8px 12px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .toolbar h1 {
+    font-size: 0.9rem;
+    width: auto;
+    flex-shrink: 0;
+  }
+
+  .controls {
+    display: flex;
+    width: auto;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+  }
+
+  .controls input {
+    width: 56px;
+    min-height: 36px;
+    padding: 4px 6px;
+    font-size: 16px;
+  }
+
+  .controls button {
+    width: auto;
+    min-height: 36px;
+    padding: 6px 12px;
+    grid-column: auto;
+  }
+
+  .legend {
+    width: auto;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  #canvas-host {
+    padding: 4px 8px;
+    align-items: center;
+  }
+}
+
+/* Prefer reduced motion: still animate sim, but no layout thrash */
+@media (prefers-reduced-motion: reduce) {
+  .controls button {
+    transition: none;
+  }
+}
