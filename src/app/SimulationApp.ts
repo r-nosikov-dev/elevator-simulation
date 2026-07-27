@@ -11,7 +11,10 @@ import {
 } from '../services/routing';
 import { BuildingView, createPixiApp } from '../view/BuildingView';
 import { ElevatorView } from '../view/ElevatorView';
+import { fitCanvasToHost } from '../view/fitCanvas';
+import { maxVisibleQueueSlots } from '../view/layout';
 import { PersonView } from '../view/PersonView';
+import { QueueOverflowBadge } from '../view/QueueOverflowBadge';
 
 export interface SimulationUiHooks {
   onDirectionChange?: (label: string, cssClass: string) => void;
@@ -29,12 +32,17 @@ export class SimulationApp {
   private buildingView: BuildingView | null = null;
   private elevatorView: ElevatorView | null = null;
   private readonly peopleLayer = new Container();
+  private readonly overflowLayer = new Container();
   private readonly personViews = new Map<number, PersonView>();
+  private readonly overflowBadges = new Map<number, QueueOverflowBadge>();
   private readonly tweenGroup = new Group();
   private unsubscribe: (() => void) | null = null;
   private tickerFn: ((ticker: { deltaMS: number }) => void) | null = null;
   private config: SimulationConfig;
   private destroyed = false;
+  private resizeObserver: ResizeObserver | null = null;
+  private onWindowResize: (() => void) | null = null;
+  private fitRaf = 0;
   private routingStrategy: ElevatorRoutingStrategy;
 
   constructor(
@@ -69,12 +77,20 @@ export class SimulationApp {
     );
 
     this.peopleLayer.removeChildren();
+    this.overflowLayer.removeChildren();
+    this.overflowBadges.clear();
+    for (const floor of this.building.floors()) {
+      const badge = new QueueOverflowBadge(this.config.floorCount);
+      this.overflowBadges.set(floor, badge);
+      this.overflowLayer.addChild(badge.container);
+    }
 
     // Stage order: cabin under people, otherwise riders are hidden behind the cabin fill.
     this.app.stage.addChild(
       this.buildingView.root,
       this.elevatorView.container,
       this.peopleLayer,
+      this.overflowLayer,
     );
 
     this.unsubscribe = this.building.subscribe((event) => this.onDomainEvent(event));
@@ -83,6 +99,9 @@ export class SimulationApp {
       this.tweenGroup.update(performance.now());
     };
     this.app.ticker.add(this.tickerFn);
+
+    this.bindResponsive();
+    this.fitCanvas();
 
     this.spawner.start();
     this.controller.start();
@@ -97,6 +116,7 @@ export class SimulationApp {
 
   async destroy(): Promise<void> {
     this.destroyed = true;
+    this.unbindResponsive();
     this.spawner?.stop();
     this.controller?.stop();
     this.unsubscribe?.();
@@ -111,6 +131,11 @@ export class SimulationApp {
       view.destroy();
     }
     this.personViews.clear();
+    for (const badge of this.overflowBadges.values()) {
+      badge.destroy();
+    }
+    this.overflowBadges.clear();
+    this.overflowLayer.removeChildren();
     this.tweenGroup.removeAll();
     this.elevatorView?.destroy();
     this.elevatorView = null;
@@ -124,6 +149,52 @@ export class SimulationApp {
       this.app = null;
     }
     this.host.replaceChildren();
+  }
+
+  private bindResponsive(): void {
+    this.unbindResponsive();
+
+    this.onWindowResize = () => this.scheduleFit();
+    window.addEventListener('resize', this.onWindowResize);
+    window.addEventListener('orientationchange', this.onWindowResize);
+
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.scheduleFit());
+      this.resizeObserver.observe(this.host);
+      const toolbar = document.querySelector('.toolbar');
+      if (toolbar instanceof HTMLElement) {
+        this.resizeObserver.observe(toolbar);
+      }
+    }
+  }
+
+  private unbindResponsive(): void {
+    if (this.fitRaf) {
+      cancelAnimationFrame(this.fitRaf);
+      this.fitRaf = 0;
+    }
+    if (this.onWindowResize) {
+      window.removeEventListener('resize', this.onWindowResize);
+      window.removeEventListener('orientationchange', this.onWindowResize);
+      this.onWindowResize = null;
+    }
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+  }
+
+  private scheduleFit(): void {
+    if (this.fitRaf) cancelAnimationFrame(this.fitRaf);
+    this.fitRaf = requestAnimationFrame(() => {
+      this.fitRaf = 0;
+      this.fitCanvas();
+    });
+  }
+
+  private fitCanvas(): void {
+    if (!this.app || this.destroyed) return;
+    fitCanvasToHost(this.app, this.host, {
+      floorCount: this.config.floorCount,
+    });
   }
 
   private onDomainEvent(event: DomainEvent): void {
@@ -157,12 +228,14 @@ export class SimulationApp {
         }
 
         if (event.person.state === PersonState.Riding) {
+          view.setQueueVisible(true);
           const slot = this.building.elevator.snapshot().passengerIds.indexOf(event.person.id);
           view.boardCabin(Math.max(0, slot), this.elevatorView.cabinX, this.elevatorView.cabinY);
           this.relayoutAllQueues();
         }
 
         if (event.person.state === PersonState.Exiting) {
+          view.setQueueVisible(true);
           view.exitToRight(() => {
             this.building?.removePerson(event.person.id);
           });
@@ -227,11 +300,18 @@ export class SimulationApp {
 
   private relayoutQueue(floor: number): void {
     if (!this.building) return;
-    this.building.waitingOn(floor).forEach((person, index) => {
+
+    const waiters = this.building.waitingOn(floor);
+    const maxVisible = maxVisibleQueueSlots();
+    const hidden = Math.max(0, waiters.length - maxVisible);
+
+    waiters.forEach((person, index) => {
       const view = this.personViews.get(person.id);
       if (!view || person.state !== PersonState.Waiting) return;
       view.shiftInQueue(index);
     });
+
+    this.overflowBadges.get(floor)?.update(floor, hidden);
   }
 
   private pushDirectionUi(direction: string): void {

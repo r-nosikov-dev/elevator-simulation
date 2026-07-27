@@ -2,7 +2,13 @@ import { Container, Graphics, Text } from 'pixi.js';
 import { Easing, Group, Tween } from '@tweenjs/tween.js';
 import { COLORS, CONFIG_LIMITS, LAYOUT, TIMING } from '../config';
 import { Direction, PersonSnapshot } from '../domain/types';
-import { personCenterY, queueX, spawnX } from './layout';
+import {
+  personCenterY,
+  queueX,
+  spawnX,
+  queueAreaRight,
+  maxVisibleQueueSlots,
+} from './layout';
 
 function cabinSlotCenter(
   cabinLeftX: number,
@@ -68,19 +74,35 @@ export class PersonView {
     return this.boarding;
   }
 
+  updateFloorCount(floorCount: number): void {
+    this.floorCount = floorCount;
+  }
+
   applySnapshot(snapshot: PersonSnapshot): void {
     this.snapshot = snapshot;
     this.redraw();
   }
 
+  setQueueVisible(visible: boolean): void {
+    this.container.visible = visible;
+  }
+
   walkToQueue(queueIndex: number, onComplete: () => void): void {
-    const targetX = queueX(queueIndex);
+    const max = maxVisibleQueueSlots();
+    const targetX = queueX(Math.min(queueIndex, max - 1));
     const targetY = personCenterY(this.snapshot.currentFloor, this.floorCount);
+    this.container.visible = true;
     this.animateTo(targetX, targetY, TIMING.corridorWalkMs, onComplete);
   }
 
   shiftInQueue(queueIndex: number): void {
     if (this.boarding || this.followCabin) return;
+    const max = maxVisibleQueueSlots();
+    if (queueIndex >= max) {
+      this.container.visible = false;
+      return;
+    }
+    this.container.visible = true;
     const targetX = queueX(queueIndex);
     const targetY = personCenterY(this.snapshot.currentFloor, this.floorCount);
     this.animateTo(targetX, targetY, TIMING.queueShiftMs);
@@ -92,10 +114,11 @@ export class PersonView {
 
     const slot = cabinSlotCenter(cabinX, cabinY, slotIndex);
     const doorX = cabinX + LAYOUT.elevatorWidth - LAYOUT.cabinDoorInset;
+    const doorY = cabinY;
     const approachMs = Math.round(TIMING.boardMs * TIMING.boardApproachRatio);
     const enterMs = TIMING.boardMs - approachMs;
 
-    this.animateTo(doorX, cabinY, approachMs, () => {
+    this.animateTo(doorX, doorY, approachMs, () => {
       this.animateTo(slot.x, slot.y, enterMs, () => {
         this.boarding = false;
         this.followCabin = true;
@@ -107,6 +130,7 @@ export class PersonView {
 
   setCabinPosition(x: number, y: number, slotIndex: number): void {
     if (this.boarding || !this.followCabin) return;
+
     const slot = cabinSlotCenter(x, y, slotIndex);
     this.stopTween();
     this.container.x = slot.x;
@@ -116,10 +140,11 @@ export class PersonView {
   exitToRight(onComplete: () => void): void {
     this.boarding = false;
     this.followCabin = false;
+    this.container.visible = true;
     const y = personCenterY(this.snapshot.currentFloor, this.floorCount);
     const midX = queueX(0);
     this.animateTo(midX, y, TIMING.exitStepOutMs, () => {
-      this.animateTo(spawnX() + 40, y, TIMING.exitWalkMs, onComplete);
+      this.animateTo(queueAreaRight(), y, TIMING.exitWalkMs, onComplete);
     });
   }
 
@@ -138,6 +163,7 @@ export class PersonView {
     this.body.roundRect(-s / 2, -s / 2, s, s, LAYOUT.personCornerRadius);
     this.body.fill({ color: fill });
     this.body.stroke({ width: LAYOUT.personStrokeWidth, color: stroke });
+
     this.label.text = String(this.snapshot.targetFloor);
   }
 

@@ -38,6 +38,7 @@ async function bootstrap(): Promise<void> {
   const host = document.getElementById('canvas-host');
   if (!host) throw new Error('#canvas-host not found');
 
+  // Inputs get min/max/default from CONFIG_LIMITS, not from HTML attributes.
   const initial = clampConfig({});
   syncInputs(initial);
 
@@ -58,6 +59,13 @@ async function bootstrap(): Promise<void> {
       applyBtn.removeAttribute('disabled');
     }
   });
+
+  // iOS chrome show/hide does not always fire window.resize.
+  if (window.visualViewport) {
+    const onVv = () => window.dispatchEvent(new Event('resize'));
+    window.visualViewport.addEventListener('resize', onVv);
+    window.visualViewport.addEventListener('scroll', onVv);
+  }
 }
 
 bootstrap().catch((err) => {
